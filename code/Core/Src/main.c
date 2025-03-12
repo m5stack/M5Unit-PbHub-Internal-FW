@@ -70,6 +70,8 @@ uint8_t servo_angle[CH_NUMBER][2] = {0};
 volatile uint16_t servo_pulse[CH_NUMBER][2] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}};
 uint8_t servo_disable[CH_NUMBER][2] = {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}};
 static char Switch[CH_NUMBER][2] = {0};
+static char PulseLevel[CH_NUMBER][2] = {0};
+static uint8_t led_show_mode = 0;
 
 uint8_t gpio_digi_read_state = 0;
 uint8_t gpio_digi_write_state[CH_NUMBER][2] = {0};
@@ -109,9 +111,19 @@ void IAP_Set()
 #endif
 }
 
-void i2c_address_write_to_flash(void) 
-{   
-  writeMessageToFlash(i2c_address , 1);   
+uint8_t i2c_address_write_to_flash(void) 
+{  
+  uint32_t flash_write_timeout = 0;
+
+  while(!writeMessageToFlash(i2c_address , 1)) {
+    flash_write_timeout++;
+    if (flash_write_timeout > 20) {
+      flash_write_timeout = 0;
+      return 0;
+    }
+  } 
+
+  return 1;  
 }
 
 void i2c_address_read_from_flash(void) 
@@ -126,8 +138,6 @@ void switchInputAndOutput(uint8_t port, uint16_t pin, uint32_t type, uint32_t pu
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-    if (type == GPIO_MODE_ANALOG)
-      __HAL_RCC_ADC1_CLK_ENABLE();    
     /*Configure GPIO pins : PAPin PAPin PAPin PAPin
                             PAPin PAPin PAPin PAPin */
     GPIO_InitStruct.Pin = pin;
@@ -139,25 +149,7 @@ void switchInputAndOutput(uint8_t port, uint16_t pin, uint32_t type, uint32_t pu
     else if (port == 1)
       HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
     else if (port == 2)
-      HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);      
-
-    if (type == GPIO_MODE_ANALOG) {
-      hadc.Instance = ADC1;
-      hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
-      hadc.Init.Resolution = ADC_RESOLUTION_12B;
-      hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-      hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
-      hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-      hadc.Init.LowPowerAutoWait = DISABLE;
-      hadc.Init.LowPowerAutoPowerOff = DISABLE;
-      hadc.Init.ContinuousConvMode = DISABLE;
-      hadc.Init.DiscontinuousConvMode = DISABLE;
-      hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-      hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-      hadc.Init.DMAContinuousRequests = DISABLE;
-      hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-      HAL_ADC_Init(&hadc);      
-    }    
+      HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);  
 }
 
 void gpio_write_level(uint8_t port, uint16_t pin, GPIO_PinState PinState)
@@ -211,27 +203,31 @@ void readADCState(uint32_t channel, uint8_t bit_mode)
     uint32_t Value[22] = {0};
     uint8_t tmp_buff[16] = {0};
     uint16_t tmp_buff_len = 0;
-    ADC_ChannelConfTypeDef sConfig = {0};
-    hadc.Instance->CHSELR = 0;
+    uint32_t eoc_timeout = 0;
+    
+    ADC1->CHSELR = 0;
+    ADC1->CHSELR = (1UL << channel);
     uint32_t max = 0;
     uint32_t min = 0;
-
-    sConfig.Channel = channel;
-    sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-    sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-    HAL_ADC_ConfigChannel(&hadc, &sConfig);
-
-    HAL_ADCEx_Calibration_Start(&hadc);
+    LL_ADC_SetSamplingTimeCommonChannels(ADC1, LL_ADC_SAMPLINGTIME_1CYCLE_5);
 
     for(int n=0;n<22;n++)
     {
-        HAL_ADC_Start(&hadc);
-        HAL_ADC_PollForConversion(&hadc, 10);
-        if(HAL_IS_BIT_SET(HAL_ADC_GetState(&hadc), HAL_ADC_STATE_REG_EOC))
-        {
-        	Value[n] = HAL_ADC_GetValue(&hadc);
-          AD_Value += Value[n];
+      if ((LL_ADC_IsEnabled(ADC1) == 1)               &&
+          (LL_ADC_IsDisableOngoing(ADC1) == 0)        &&
+          (LL_ADC_REG_IsConversionOngoing(ADC1) == 0)   )
+      {
+        LL_ADC_REG_StartConversion(ADC1);
+      }
+      while(LL_ADC_IsActiveFlag_EOC(ADC1) == 0) {
+        eoc_timeout++;
+        if (eoc_timeout > 32000) {
+          return;
         }
+      }
+      LL_ADC_ClearFlag_EOC(ADC1);
+      Value[n] = LL_ADC_REG_ReadConversionData12(ADC1);
+      AD_Value += Value[n];
     }
     max=Value[0];
     min=Value[0];
@@ -268,13 +264,22 @@ void set_single_rgb_led(uint16_t index, uint8_t ch)
       switch (gpio_ch_to_port[ch][1])
       {
       case 0:
-        neopixel_show(i, ch);
+        if (led_show_mode == 0)
+          neopixel_show(i, ch);
+        else if (led_show_mode == 1)
+          neopixel_show_mode2(i, ch);
         break;
       case 1:
-        neopixel_show_portb(i, ch);
+        if (led_show_mode == 0)
+          neopixel_show_portb(i, ch);
+        else if (led_show_mode == 1)
+          neopixel_show_portb_mode2(i, ch);
         break;
       case 2:
-        neopixel_show_portf(i, ch);
+        if (led_show_mode == 0)
+          neopixel_show_portf(i, ch);
+        else if (led_show_mode == 1)
+          neopixel_show_portf_mode2(i, ch);
         break;
       default:
         break;
@@ -295,13 +300,22 @@ void set_multi_rgb_led(uint16_t index, uint16_t end, uint8_t ch)
         switch (gpio_ch_to_port[ch][1])
         {
         case 0:
-          neopixel_show(i, ch);
+          if (led_show_mode == 0)
+            neopixel_show(i, ch);
+          else if (led_show_mode == 1)
+            neopixel_show_mode2(i, ch);
           break;
         case 1:
-          neopixel_show_portb(i, ch);
+          if (led_show_mode == 0)
+            neopixel_show_portb(i, ch);
+          else if (led_show_mode == 1)
+            neopixel_show_portb_mode2(i, ch);
           break;
         case 2:
-          neopixel_show_portf(i, ch);
+          if (led_show_mode == 0)
+            neopixel_show_portf(i, ch);
+          else if (led_show_mode == 1)
+            neopixel_show_portf_mode2(i, ch);
           break;
         default:
           break;
@@ -316,13 +330,22 @@ void set_multi_rgb_led(uint16_t index, uint16_t end, uint8_t ch)
         switch (gpio_ch_to_port[ch][1])
         {
         case 0:
-          neopixel_show(i, ch);
+          if (led_show_mode == 0)
+            neopixel_show(i, ch);
+          else if (led_show_mode == 1)
+            neopixel_show_mode2(i, ch);
           break;
         case 1:
-          neopixel_show_portb(i, ch);
+          if (led_show_mode == 0)
+            neopixel_show_portb(i, ch);
+          else if (led_show_mode == 1)
+            neopixel_show_portb_mode2(i, ch);
           break;
         case 2:
-          neopixel_show_portf(i, ch);
+          if (led_show_mode == 0)
+            neopixel_show_portf(i, ch);
+          else if (led_show_mode == 1)
+            neopixel_show_portf_mode2(i, ch);
           break;
         default:
           break;
@@ -464,11 +487,17 @@ void Slave_Complete_Callback(uint8_t *rx_data, uint16_t len)
     } else {
       if (rx_data[0] == 0xff) {
         if (len == 2) {
-          if (rx_data[1] < 128) {
+          if (rx_data[1] && (rx_data[1] < 128)) {
             i2c_address[0] = rx_data[1];
             i2c_address_write_to_flash();
             user_i2c_init();
           }
+        }       
+      }
+      else if (rx_data[0] == 0xfa) {
+        if (len == 2) {
+          if ((rx_data[1] <= 1))
+            led_show_mode = rx_data[1];
         }       
       }
       else if (rx_data[0] == 0xFD)
@@ -478,7 +507,7 @@ void Slave_Complete_Callback(uint8_t *rx_data, uint16_t len)
           LL_I2C_DisableAutoEndMode(I2C1);
           LL_I2C_Disable(I2C1);
           LL_I2C_DisableIT_ADDR(I2C1);
-          HAL_ADC_DeInit(&hadc);
+          LL_ADC_DeInit(ADC1);
           HAL_TIM_Base_Stop_IT(&htim16);
           HAL_TIM_Base_Stop_IT(&htim17);
           HAL_TIM_Base_Stop(&htim16);
@@ -547,6 +576,10 @@ void Slave_Complete_Callback(uint8_t *rx_data, uint16_t len)
       {
         i2c1_set_send_data((uint8_t *)&fm_version, 1);
       }    
+      else if (rx_data[0] == 0xfa)
+      {
+        i2c1_set_send_data((uint8_t *)&led_show_mode, 1);
+      }    
       else if (rx_data[0] == 0xff)
       {
         i2c1_set_send_data(i2c_address, 1);
@@ -609,6 +642,27 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    if(TIM17->CNT >= 20000)	
+    {
+      TIM17->CNT = 0;  
+    } 
+    for(int i=0; i<CH_NUMBER; i++)
+    {
+      for(int j=0; j<2; j++) {
+        if (servo_disable[i][j])
+          continue;
+        if(TIM17->CNT <= servo_pulse[i][j] && PulseLevel[i][j]==0)
+        {
+          gpio_write_level_high(gpio_ch_to_port[i][j], gpio_pinmap[i][j]);
+          PulseLevel[i][j]=1;
+        }
+        else if(TIM17->CNT > servo_pulse[i][j] && PulseLevel[i][j]!=0)
+        {
+          gpio_write_level_low(gpio_ch_to_port[i][j], gpio_pinmap[i][j]);
+          PulseLevel[i][j]=0;
+        }
+      }
+    }
     if(TIM16->CNT >= 2550)	
     {
       TIM16->CNT = 0;  
@@ -624,27 +678,6 @@ int main(void)
           Switch[i][j]=1;
         }
         else if(TIM16->CNT > pwm_pulse[i][j] && Switch[i][j]!=0 && TIM16->CNT <= 2550)
-        {
-          gpio_write_level_low(gpio_ch_to_port[i][j], gpio_pinmap[i][j]);
-          Switch[i][j]=0;
-        }
-      }
-    }
-    if(TIM17->CNT >= 20000)	
-    {
-      TIM17->CNT = 0;  
-    } 
-    for(int i=0; i<CH_NUMBER; i++)
-    {
-      for(int j=0; j<2; j++) {
-        if (servo_disable[i][j])
-          continue;
-        if(TIM17->CNT <= servo_pulse[i][j] && Switch[i][j]==0)
-        {
-          gpio_write_level_high(gpio_ch_to_port[i][j], gpio_pinmap[i][j]);
-          Switch[i][j]=1;
-        }
-        else if(TIM17->CNT > servo_pulse[i][j] && Switch[i][j]!=0)
         {
           gpio_write_level_low(gpio_ch_to_port[i][j], gpio_pinmap[i][j]);
           Switch[i][j]=0;
@@ -744,6 +777,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+    HAL_NVIC_SystemReset();
   }
   /* USER CODE END Error_Handler_Debug */
 }

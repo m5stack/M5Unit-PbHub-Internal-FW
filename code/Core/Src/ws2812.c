@@ -50,7 +50,7 @@ void color_set_single(uint32_t color);
 
 void restart(void) {
   for (uint8_t i = 0; i < 113; i++) {
-    delay_600ns();
+    delay_900ns();
   }
 }
 
@@ -203,6 +203,27 @@ void neopixel_show_portf(uint16_t index, uint8_t ch) {
   // restart();
 }
 
+void neopixel_show_mode2(uint16_t index, uint8_t ch) {
+  __disable_irq();
+  color_set_single_mode2(color_buf[ch][index]);
+  __enable_irq();
+  // restart();
+}
+
+void neopixel_show_portb_mode2(uint16_t index, uint8_t ch) {
+  __disable_irq();
+  color_set_single_portb_mode2(color_buf[ch][index]);
+  __enable_irq();
+  // restart();
+}
+
+void neopixel_show_portf_mode2(uint16_t index, uint8_t ch) {
+  __disable_irq();
+  color_set_single_portf_mode2(color_buf[ch][index]);
+  __enable_irq();
+  // restart();
+}
+
 void color_set_single(uint32_t color) {
   for (uint8_t i = 0; i < 24; i++) {
     if (color & (1 << (23 - i))) {
@@ -232,6 +253,39 @@ void color_set_single_portf(uint32_t color) {
     }
     else {
       out_bit_low_f();
+    }
+  }
+}
+
+void color_set_single_mode2(uint32_t color) {
+  for (uint8_t i = 0; i < 24; i++) {
+    if (color & (1 << (23 - i))) {
+      out_bit_high_mode2();
+    }
+    else {
+      out_bit_low_mode2();
+    }
+  }
+}
+
+void color_set_single_portb_mode2(uint32_t color) {
+  for (uint8_t i = 0; i < 24; i++) {
+    if (color & (1 << (23 - i))) {
+      out_bit_high_b_mode2();
+    }
+    else {
+      out_bit_low_b_mode2();
+    }
+  }
+}
+
+void color_set_single_portf_mode2(uint32_t color) {
+  for (uint8_t i = 0; i < 24; i++) {
+    if (color & (1 << (23 - i))) {
+      out_bit_high_f_mode2();
+    }
+    else {
+      out_bit_low_f_mode2();
     }
   }
 }

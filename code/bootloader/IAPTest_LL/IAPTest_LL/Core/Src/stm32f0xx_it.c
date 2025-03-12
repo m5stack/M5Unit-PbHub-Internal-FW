@@ -74,6 +74,7 @@ void NMI_Handler(void)
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
   while (1)
   {
+    NVIC_SystemReset();
   }
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
@@ -89,6 +90,7 @@ void HardFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
+    NVIC_SystemReset();
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }
@@ -125,7 +127,7 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
-
+  SysTick_counter++;
   /* USER CODE END SysTick_IRQn 0 */
 
   /* USER CODE BEGIN SysTick_IRQn 1 */

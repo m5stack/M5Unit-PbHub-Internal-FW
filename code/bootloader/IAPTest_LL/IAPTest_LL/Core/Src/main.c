@@ -61,6 +61,9 @@ typedef  void (*pFunction)(void);
 #define ERROR_PLL_TIMEOUT 0xAA
 #define ERROR_CLKSWITCH_TIMEOUT 0xBB
 
+#define DELAY_TIME 500
+#define DELAY_TIME_2 60000
+
 //#define  OPC_READ       (uint8_t)(0x03)
 #define  OPC_WREN       (uint8_t)(0x06)
 //#define  OPC_ERPG       (uint8_t)(0x20)
@@ -84,6 +87,7 @@ typedef  void (*pFunction)(void);
 #define STM32F0xx_FLASH_PAGE13_STARTADDR (STM32F0xx_FLASH_PAGE0_STARTADDR+13*STM32F0xx_PAGE_SIZE)
 #define STM32F0xx_FLASH_PAGE14_STARTADDR (STM32F0xx_FLASH_PAGE0_STARTADDR+14*STM32F0xx_PAGE_SIZE)
 #define STM32F0xx_FLASH_PAGE15_STARTADDR (STM32F0xx_FLASH_PAGE0_STARTADDR+15*STM32F0xx_PAGE_SIZE)
+#define STM32F0xx_FLASH_PAGE16_STARTADDR (STM32F0xx_FLASH_PAGE0_STARTADDR+16*STM32F0xx_PAGE_SIZE)
 
 #define FLASH_PAGE_SIZE         ((uint32_t)0x00000400)   /* FLASH Page Size */
 #define FLASH_USER_START_ADDR   STM32F0xx_FLASH_PAGE5_STARTADDR   /* Start @ of user Flash area */
@@ -111,6 +115,8 @@ __IO TestStatus MemoryProgramStatus = PASSED;
 uint32_t JumpAddress;
 pFunction JumpToApplication;
 uint8_t opcode;
+volatile uint32_t lastTime = 0;
+volatile uint32_t SysTick_counter;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -124,6 +130,11 @@ static void MX_CRC_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+uint32_t time_stick_get(void)
+{
+  return SysTick_counter;
+}
+
 uint32_t My_CRC(uint8_t *buffer, uint32_t buffer_legnth){
   uint32_t i;
   uint32_t temp = 0;
@@ -267,7 +278,9 @@ void Jump_APP(void)
                   JumpToApplication();
                 }
   }
-
+  else {
+    NVIC_SystemReset();
+  }
 }
 
 void Write_Code(void)
@@ -276,12 +289,18 @@ void Write_Code(void)
     uint32_t Add_Flash, end_add_flash;
     uint32_t Data = 0;
     uint16_t Data_index = 8;
+    uint32_t opt_timeout = 0;
 
     Add_Flash = Receive_Buffer[1]<<24|              
                 Receive_Buffer[2]<<16|
                 Receive_Buffer[3]<<8|
                 Receive_Buffer[4]<<0;
     end_add_flash = Add_Flash + 1024;
+
+    // illegal 
+    if ((Add_Flash < APPLICATION_ADDRESS) || (Add_Flash >= STM32F0xx_FLASH_PAGE16_STARTADDR)) {
+      return;
+    }    
   
     Number_Bytes_Transferred=(Receive_Buffer[5]<<8)+ Receive_Buffer[6];
     
@@ -292,29 +311,28 @@ void Write_Code(void)
 
       while (FLASH_ErasePage(Add_Flash)!= FLASH_COMPLETE)
       {
-      /* Error occurred while sector erase. 
-          User can add here some code to deal with this error  */
-        // while (1)
-        // {
-        // }
+        opt_timeout++;
+        if (opt_timeout > 32000) {
+          FLASH_Lock();
+          return;
+        }
       }
 
       while (Add_Flash < end_add_flash) {
         Data = Receive_Buffer[Data_index] | (Receive_Buffer[Data_index+1] << 8) \
-        | (Receive_Buffer[Data_index+2] << 16) | (Receive_Buffer[Data_index+3] << 24);			
+        | (Receive_Buffer[Data_index+2] << 16) | (Receive_Buffer[Data_index+3] << 24);		
+
+        opt_timeout = 0;	
         while (FLASH_ProgramWord(Add_Flash, Data) != FLASH_COMPLETE)
         {
+          opt_timeout++;
+          if (opt_timeout > 8000) {
+            FLASH_Lock();
+            return;
+          }          
         }
         Add_Flash = Add_Flash + 4;
         Data_index = Data_index + 4;        
-        // else
-        // { 
-        //   /* Error occurred while writing data in Flash memory. 
-        //     User can add here some code to deal with this error */
-        //   while (1)
-        //   {
-        //   }
-        // }
       }            
     }
     for (int i = 0; i < sizeof(Receive_Buffer); i++) {
@@ -330,7 +348,9 @@ void iap_i2c(void)
   while(1)
   {
     //Tomas_Li_Test();//Just for Test
-    
+    if (time_stick_get() > lastTime) {
+      Jump_APP();
+    }
     if (i2c_event == EVENT_OPCOD_NOTYET_READ)
     {
       
@@ -341,6 +361,7 @@ void iap_i2c(void)
       switch (opcode)
       {
           case OPC_WREN:
+            lastTime = time_stick_get() + DELAY_TIME_2;
             Write_Code();                  
             break;
           
@@ -386,7 +407,7 @@ static void iap_gpio_init(void)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  uint32_t systick_timeout = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -406,7 +427,12 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  while(SysTick_Config(SystemCoreClock/1000) != 0) {
+    systick_timeout++;
+    if (systick_timeout > 12000) {
+      NVIC_SystemReset();
+    }
+  }
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -414,47 +440,11 @@ int main(void)
   // MX_I2C1_Init();
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
-  iap_gpio_init();
-
-  LL_mDelay(300);
-
-  if ((!(!!(GPIOA->IDR & LL_GPIO_PIN_9))) && (!(!!(GPIOA->IDR & LL_GPIO_PIN_10)))) {
-    MX_I2C1_Init();
-    LL_I2C_Enable(I2C1);
-    LL_I2C_EnableIT_ADDR(I2C1);
-    iap_i2c(); 
-  } else {
-    Jump_APP();
-  }
   MX_I2C1_Init();
   LL_I2C_Enable(I2C1);
   LL_I2C_EnableIT_ADDR(I2C1);      
+  lastTime = time_stick_get() + DELAY_TIME;
   iap_i2c();
-  
-  // if ((GPIOA->IDR & 0x0000020)==0x0000020) {
-  //   iap_i2c();     
-  // } else {
-  //   Jump_APP();
-  // } 
-  // for (int i = 0; i < 10000; i++) {
-  //   if (i2c_event == EVENT_OPCOD_NOTYET_READ)
-  //   {
-  //     NVIC_DisableIRQ(I2C1_IRQn);
-  //     i2c_event=NOEVENT;//changed the status
-  //     /* Read opcode */
-  //     if ((Receive_Buffer[0] == 's') && (Receive_Buffer[1] == 'p') && (Receive_Buffer[2] == 'i') && \
-  //         (Receive_Buffer[3] == 'd') && (Receive_Buffer[4] == 'e') && (Receive_Buffer[5] == 'r') && \
-  //         (Receive_Buffer[6] == 'm') && (Receive_Buffer[7] == 'a') && (Receive_Buffer[8] == 'n'))
-  //     {
-  //       NVIC_EnableIRQ(I2C1_IRQn);            
-  //       I2C1->CR1 |=I2C_CR1_ADDRIE;//Open address and Stop interrupt        
-  //       iap_i2c(); 
-  //     }                        
-  //     NVIC_EnableIRQ(I2C1_IRQn);            
-  //     I2C1->CR1 |=I2C_CR1_ADDRIE;//Open address and Stop interrupt
-  //   } 
-  // }
-  // Jump_APP();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -475,26 +465,40 @@ int main(void)
   */
 void SystemClock_Config(void)
 {
+  uint32_t clock_setup_timeout = 0;
+
   LL_FLASH_SetLatency(LL_FLASH_LATENCY_0);
   while(LL_FLASH_GetLatency() != LL_FLASH_LATENCY_0)
   {
+    clock_setup_timeout++;
+    if (clock_setup_timeout > 32000) {
+      NVIC_SystemReset();
+    }     
   }
   LL_RCC_HSI_Enable();
 
+  clock_setup_timeout = 0;
    /* Wait till HSI is ready */
   while(LL_RCC_HSI_IsReady() != 1)
   {
-
+    clock_setup_timeout++;
+    if (clock_setup_timeout > 32000) {
+      NVIC_SystemReset();
+    }
   }
   LL_RCC_HSI_SetCalibTrimming(16);
   LL_RCC_SetAHBPrescaler(LL_RCC_SYSCLK_DIV_1);
   LL_RCC_SetAPB1Prescaler(LL_RCC_APB1_DIV_1);
   LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_HSI);
 
+  clock_setup_timeout = 0;
    /* Wait till System clock is ready */
   while(LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_HSI)
   {
-
+    clock_setup_timeout++;
+    if (clock_setup_timeout > 32000) {
+      NVIC_SystemReset();
+    }
   }
   LL_Init1msTick(8000000);
   LL_SetSystemCoreClock(8000000);
@@ -632,6 +636,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+    NVIC_SystemReset();
   }
   /* USER CODE END Error_Handler_Debug */
 }

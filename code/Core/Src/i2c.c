@@ -126,7 +126,7 @@ void user_i2c_init(void)
   LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_I2C1);
 
   /* I2C1 interrupt Init */
-  NVIC_SetPriority(I2C1_IRQn, 0);
+  NVIC_SetPriority(I2C1_IRQn, 1);
   NVIC_EnableIRQ(I2C1_IRQn);
 
   /* USER CODE BEGIN I2C1_Init 1 */

@@ -109,33 +109,50 @@ bool writeMessageToFlash( uint8_t *buff , uint16_t length)
         return false;
     }
     
-    HAL_FLASH_Unlock();
+    if (HAL_FLASH_Unlock() != HAL_OK) {
+        return false;
+    }
 
     My_Flash.TypeErase = FLASH_TYPEERASE_PAGES;  //标明Flash执行页面只做擦除操作
     My_Flash.PageAddress = STM32F0xx_FLASH_PAGE15_STARTADDR;  //声明要擦除的地址
     My_Flash.NbPages = 1;                        //说明要擦除的页数，此参数必须是Min_Data = 1和Max_Data =(最大页数-初始页的值)之间的值        
     
     uint32_t PageError = 0;                    //设置PageError,如果出现错误这个变量会被设置为出错的FLASH地址
-    HAL_FLASHEx_Erase(&My_Flash, &PageError);  //调用擦除函数擦除
+    if (HAL_FLASHEx_Erase(&My_Flash, &PageError) != HAL_OK) {
+        HAL_FLASH_Lock();
+        return false;        
+    }
 
     //对Flash进行烧写，FLASH_TYPEPROGRAM_HALFWORD 声明操作的Flash地址的16位的，此外还有32位跟64位的操作，自行翻查HAL库的定义即可
     
     /*Write head*/
-    HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR, EEPPROM_PACKAGEHEAD);
+    if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR, EEPPROM_PACKAGEHEAD)) {
+        HAL_FLASH_Lock();
+        return false;           
+    }
     /*Write length*/
-    HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR+2, length);
+    if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR+2, length)) {
+        HAL_FLASH_Lock();
+        return false;            
+    }
     
     
     /*Write datas*/
     for(i=0 ;i<length/2 ;i++)
     {
         temp = buff[2*i]|(uint16_t)buff[2*i+1]<<8;
-        HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR+4+2*i, temp);
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR+4+2*i, temp) != HAL_OK) {
+            HAL_FLASH_Lock();
+            return false;              
+        }
     }  
     if( isItOddNumber(length) )//Write one more if length is odd number.
     {        
         temp = (uint16_t)buff[length-1];
-        HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR+4+(length-1), temp);
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, STM32F0xx_FLASH_PAGE15_STARTADDR+4+(length-1), temp) != HAL_OK) {
+            HAL_FLASH_Lock();
+            return false;               
+        }
     }
 
     

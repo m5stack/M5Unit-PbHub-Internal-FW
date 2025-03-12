@@ -56,7 +56,7 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-
+extern volatile uint32_t SysTick_counter;
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/

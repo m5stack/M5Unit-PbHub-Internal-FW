@@ -39,45 +39,84 @@ extern volatile uint16_t neopixel_pin;
 #define gpio_low_f() GPIOF->BRR = neopixel_pin
 #define gpio_high_f() GPIOF->BSRR = neopixel_pin
 #define delay_150ns() __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP")
+#define delay_150ns_high() __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP");__asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP")
 #define delay_300ns() delay_150ns(); __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP"); __asm("NOP")
+#define delay_300ns_low() delay_150ns(); __asm("NOP"); __asm("NOP");
 #define delay_600ns() delay_300ns(); delay_300ns()
+#define delay_600ns_high() delay_300ns(); delay_300ns(); delay_150ns()
 #define delay_900ns() delay_600ns(); delay_300ns()
+#define delay_900ns_high() delay_600ns(); delay_300ns();delay_300ns()
+#define delay_900ns_very_high() delay_600ns(); delay_300ns();delay_600ns()
+#define delay_900ns_low() delay_600ns(); delay_300ns_low()
 
 #define out_bit_low() \
   gpio_high(); \
-  delay_300ns(); \
+  delay_150ns(); \
   gpio_low(); \
-  delay_600ns();
+  delay_600ns_high();
 
 #define out_bit_high() \
   gpio_high(); \
-  delay_900ns(); \
+  delay_900ns_low(); \
   gpio_low(); \
-  delay_150ns();
+  delay_150ns_high();
 
 #define out_bit_low_b() \
   gpio_high_b(); \
-  delay_300ns(); \
+  delay_150ns(); \
   gpio_low_b(); \
-  delay_600ns();
+  delay_600ns_high();
 
 #define out_bit_high_b() \
   gpio_high_b(); \
-  delay_900ns(); \
+  delay_900ns_low(); \
   gpio_low_b(); \
-  delay_150ns();
+  delay_150ns_high();
 
 #define out_bit_low_f() \
   gpio_high_f(); \
-  delay_300ns(); \
+  delay_150ns(); \
   gpio_low_f(); \
-  delay_600ns();
+  delay_600ns_high();
 
 #define out_bit_high_f() \
   gpio_high_f(); \
-  delay_900ns(); \
+  delay_900ns_low(); \
   gpio_low_f(); \
-  delay_150ns();
+  delay_150ns_high();
+
+#define out_bit_low_mode2() \
+  gpio_high(); \
+  delay_150ns(); \
+  gpio_low(); \
+  delay_900ns_high();
+
+#define out_bit_high_mode2() \
+  gpio_high(); \
+  delay_900ns_very_high(); \
+  gpio_low();
+
+#define out_bit_low_b_mode2() \
+  gpio_high_b(); \
+  delay_150ns(); \
+  gpio_low_b(); \
+  delay_900ns_high();
+
+#define out_bit_high_b_mode2() \
+  gpio_high_b(); \
+  delay_900ns_very_high(); \
+  gpio_low_b();
+
+#define out_bit_low_f_mode2() \
+  gpio_high_f(); \
+  delay_150ns(); \
+  gpio_low_f(); \
+  delay_900ns_high();
+
+#define out_bit_high_f_mode2() \
+  gpio_high_f(); \
+  delay_900ns_very_high(); \
+  gpio_low_f();
 
 /* USER CODE END Private defines */
 void restart(void);
@@ -93,6 +132,12 @@ void color_set_single(uint32_t color);
 void color_set_single_portb(uint32_t color);
 void color_set_single_portf(uint32_t color);
 void neopixel_set_single_color(uint8_t num, uint8_t color, uint8_t shiftnum);
+void color_set_single_mode2(uint32_t color);
+void color_set_single_portb_mode2(uint32_t color);
+void color_set_single_portf_mode2(uint32_t color);
+void neopixel_show_mode2(uint16_t index, uint8_t ch);
+void neopixel_show_portb_mode2(uint16_t index, uint8_t ch);
+void neopixel_show_portf_mode2(uint16_t index, uint8_t ch);
 
 /* USER CODE BEGIN Prototypes */
 

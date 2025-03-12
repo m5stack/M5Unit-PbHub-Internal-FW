@@ -11,7 +11,6 @@
 __IO uint8_t aReceiveBuffer[I2C_RECEIVE_BUFFER_LEN];
 __IO uint8_t tx_buffer[I2C_RECEIVE_BUFFER_LEN];
 __IO uint16_t ubReceiveIndex = 0;
-uint8_t* pSlaveTransmitBuffer = 0;
 volatile uint8_t i2c_addr = 0;
 volatile uint16_t tx_buffer_index = 0;
 volatile uint16_t tx_len = 0;
@@ -73,7 +72,9 @@ void i2c1_set_send_data(uint8_t *tx_ptr, uint16_t len) {
   if (len == 0 || tx_ptr == NULL) {
     return;
   }
-  memcpy((void *)tx_buffer, tx_ptr, len);
+  for (int i = 0; i < len; i++) {
+    tx_buffer[i] = tx_ptr[i];
+  }
   tx_buffer_index = 0;
   tx_len = len;
 }
@@ -82,7 +83,11 @@ void Slave_Reception_Callback(void)
 {
   /* Read character in Receive Data register.
   RXNE flag is cleared by reading data in RXDR register */
-  aReceiveBuffer[ubReceiveIndex++] = LL_I2C_ReceiveData8(I2C1);
+  aReceiveBuffer[ubReceiveIndex] = LL_I2C_ReceiveData8(I2C1);
+  ubReceiveIndex++;
+  if (ubReceiveIndex >= I2C_RECEIVE_BUFFER_LEN) {
+    ubReceiveIndex = 0;
+  }  
 }
 
 void Slave_Ready_To_Transmit_Callback(void)
@@ -93,13 +98,16 @@ void Slave_Ready_To_Transmit_Callback(void)
   if (tx_buffer_index >= tx_len) {
     tx_buffer_index = 0;
   }
+  if (tx_buffer_index >= I2C_RECEIVE_BUFFER_LEN) {
+    tx_buffer_index = 0;
+  }
 }
 
 void I2C1_IRQHandler(void)
 {
   /* USER CODE BEGIN I2C1_IRQn 0 */
   i2c_timeout_counter++;
-  if (i2c_timeout_counter > 3000) {
+  if (i2c_timeout_counter > 12000) {
     LL_I2C_DeInit(I2C1);
     LL_I2C_DisableAutoEndMode(I2C1);
     LL_I2C_Disable(I2C1);
